@@ -87,7 +87,7 @@ if "active_shipment_id" not in st.session_state:
     st.session_state.active_shipment_id = "SH001"
 
 if "current_page" not in st.session_state:
-    st.session_state.current_page = "📷 Camera Verification"
+    st.session_state.current_page = "📡 ESP32 IoT Detection"
 
 if "detected_cameras" not in st.session_state:
     st.session_state.detected_cameras = None
@@ -575,8 +575,8 @@ with st.sidebar:
     st.markdown('<div style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px;">📍 Navigation Pages</div>', unsafe_allow_html=True)
     
     pages = [
-        "📷 Camera Verification",
         "📡 ESP32 IoT Detection",
+        "📷 Camera Verification",
         "🗺️ Route Optimization",
         "📊 Complete Report"
     ]
@@ -639,11 +639,22 @@ with st.sidebar:
     st.session_state.ui_theme = selected_theme
 
     st.markdown("---")
-    auto_refresh = st.checkbox("⚡ Live Sensor Polling (2s)", value=False)
+    auto_refresh = st.checkbox("⚡ Live Telemetry Auto-Stream (2s)", value=True)
     st.caption("Freshroute Agro-Intelligence v2.5")
 
 # Inject chosen theme styles
 inject_theme_css(st.session_state.ui_theme)
+
+
+# ==============================================================================
+# AUTOMATIC TELEMETRY POLLING FROM ESP32 SERIAL STREAM
+# ==============================================================================
+if sensor_mgr.is_connected:
+    live_r = sensor_mgr.read_serial_line()
+    if live_r:
+        curr_shipment["readings"].append(live_r.to_dict())
+        if len(curr_shipment["readings"]) > 120:
+            curr_shipment["readings"] = curr_shipment["readings"][-120:]
 
 
 # ==============================================================================
@@ -702,9 +713,258 @@ st.markdown(f"""
 
 
 # ==============================================================================
-# PAGE 1: 📷 CAMERA QUALITY VERIFICATION
+# PAGE 1: 📡 ESP32 DETECTION & IOT TELEMETRY
 # ==============================================================================
-if st.session_state.current_page == "📷 Camera Verification":
+if st.session_state.current_page == "📡 ESP32 IoT Detection":
+    st.markdown('<div class="cyber-card">', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="cyber-card-title">
+        <span>📡 ESP32 Edge Hardware Link & Environmental Telemetry Stream</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    e_col1, e_col2 = st.columns([1, 1.4])
+
+    with e_col1:
+        st.markdown("<b>🔌 Hardware Telemetry Connection:</b>", unsafe_allow_html=True)
+        available_ports = sensor_mgr.list_available_ports()
+        default_mode_idx = 0 if available_ports else 1
+
+        conn_mode = st.radio(
+            "Connection Protocol",
+            ["Physical Serial (USB/COM)", "Simulator (Real-time Dynamic Stream)", "Wi-Fi HTTP / IP Stream", "Manual Telemetry Injection"],
+            index=default_mode_idx
+        )
+
+        if conn_mode == "Physical Serial (USB/COM)":
+            if available_ports:
+                port_options = [p["port"] for p in available_ports]
+                port_labels = {p["port"]: p["description"] for p in available_ports}
+                default_p = sensor_mgr.get_best_default_port() or port_options[0]
+                
+                selected_port = st.selectbox(
+                    "Select COM Port",
+                    port_options,
+                    index=port_options.index(default_p) if default_p in port_options else 0,
+                    format_func=lambda x: port_labels.get(x, x)
+                )
+                baud = st.selectbox("Baud Rate", [115200, 9600, 57600], index=0)
+                
+                col_c1, col_c2 = st.columns(2)
+                with col_c1:
+                    if st.button("🔌 Connect ESP32", use_container_width=True):
+                        ok, msg = sensor_mgr.connect_serial(selected_port, baud)
+                        if ok:
+                            st.toast(f"✅ {msg}", icon="🔌")
+                        else:
+                            st.toast(f"❌ {msg}", icon="⚠️")
+                        st.rerun()
+                with col_c2:
+                    if st.button("❌ Disconnect", use_container_width=True):
+                        sensor_mgr.disconnect_serial()
+                        st.toast("Serial disconnected.", icon="ℹ️")
+                        st.rerun()
+                
+                # Connection Status Badge & Details
+                if sensor_mgr.is_connected:
+                    st.markdown(f'<div style="margin-top: 8px;"><span class="badge-neon-green">🟢 ESP32 Active: {sensor_mgr.serial_port} @ {sensor_mgr.baud_rate} baud</span></div>', unsafe_allow_html=True)
+                    st.markdown(f"""
+                    <div class="neon-callout" style="margin-top: 8px;">
+                        <b>Status:</b> {sensor_mgr.status_message}<br>
+                        <b>Raw Output:</b> <code>{sensor_mgr.latest_raw_line if sensor_mgr.latest_raw_line else 'Waiting for data...'}</code>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown('<div style="margin-top: 8px;"><span class="badge-neon-red">⚪ Status: Disconnected</span></div>', unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div class="neon-callout-warn">
+                    ⚠️ No physical serial COM ports detected. Connect ESP32 via USB and click <b>Refresh</b> below.
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button("🔍 Scan for COM Ports", use_container_width=True):
+                    st.rerun()
+
+        elif conn_mode == "Wi-Fi HTTP / IP Stream":
+            esp32_url = st.text_input("ESP32 JSON Endpoint URL", "http://192.168.1.100/data")
+            if st.button("📡 Test Ping Endpoint", use_container_width=True):
+                r, msg = sensor_mgr.fetch_http_reading(esp32_url, timeout=1.5)
+                if r:
+                    st.toast(f"📡 Ping OK: {r.temperature_C}°C, {r.humidity_RH}% RH", icon="✅")
+                    curr_shipment["readings"].append(r.to_dict())
+                else:
+                    st.toast(f"❌ Ping Failed: {msg}", icon="⚠️")
+            st.caption("Expected JSON: `{\"temperature\": 24.5, \"humidity\": 71.8}`")
+
+        elif conn_mode == "Simulator (Real-time Dynamic Stream)":
+            sim_anomaly = st.selectbox(
+                "Environmental Stress Simulation Scenario",
+                ["NORMAL", "COOLING_FAILURE", "HEATWAVE", "HIGH_HUMIDITY"],
+                format_func=lambda x: {
+                    "NORMAL": "🟢 Normal Cold-Chain Compliance (24°C / 72% RH)",
+                    "COOLING_FAILURE": "🔴 Cooling Unit Failure (Rapid Warming)",
+                    "HEATWAVE": "🟠 High Heatwave Exposure (Thermal Spike)",
+                    "HIGH_HUMIDITY": "🔵 Excessive Moisture / Condensation Risk"
+                }[x]
+            )
+            sensor_mgr.sim_anomaly = sim_anomaly
+            sensor_mgr.sim_base_temp = st.slider("Base Temperature (°C)", 0.0, 45.0, 24.0, 0.5)
+            sensor_mgr.sim_base_humidity = st.slider("Base Relative Humidity (%)", 30.0, 98.0, 72.0, 1.0)
+            
+            sim_reading = sensor_mgr.generate_simulated_reading()
+            curr_shipment["readings"].append(sim_reading.to_dict())
+            if len(curr_shipment["readings"]) > 120:
+                curr_shipment["readings"] = curr_shipment["readings"][-120:]
+
+        elif conn_mode == "Manual Telemetry Injection":
+            man_t = st.slider("Manual Temp (°C)", -5.0, 50.0, 28.5, 0.1)
+            man_h = st.slider("Manual RH (%)", 20.0, 100.0, 68.0, 0.5)
+            if st.button("💉 Inject Single Reading", use_container_width=True):
+                r = sensor_mgr.get_latest_reading(curr_shipment["id"], manual_temp=man_t, manual_hum=man_h)
+                curr_shipment["readings"].append(r.to_dict())
+                st.toast(f"💉 Injected Reading: {man_t}°C, {man_h}% RH", icon="⚡")
+                st.rerun()
+
+    with e_col2:
+        history = curr_shipment.get("readings", [])
+        latest_r = history[-1] if history else {"temperature_C": 24.5, "humidity_RH": 72.0}
+
+        crop_meta = engine.get_crop_params(curr_shipment["crop"])
+        t_opt_min = crop_meta.get("T_opt_min", 12.0)
+        t_opt_max = crop_meta.get("T_opt_max", 20.0)
+        rh_opt_min = crop_meta.get("RH_opt_min", 85.0)
+        rh_opt_max = crop_meta.get("RH_opt_max", 95.0)
+
+        # 4 Metric Cards Row
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            t_val = latest_r["temperature_C"]
+            t_color = "#00f5a0" if t_opt_min <= t_val <= t_opt_max else ("#ff3366" if t_val > 30.0 else "#ffd166")
+            st.markdown(f"""
+            <div class="neon-metric-box">
+                <div class="neon-metric-val" style="color: {t_color};">{t_val:.1f} °C</div>
+                <div class="neon-metric-lbl">Temperature</div>
+                <div style="font-size: 9.5px; color: #94a3b8; margin-top: 2px;">Opt: {t_opt_min}-{t_opt_max}°C</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with m2:
+            h_val = latest_r["humidity_RH"]
+            h_color = "#00f5a0" if rh_opt_min <= h_val <= rh_opt_max else ("#ff3366" if h_val < 50.0 else "#ffd166")
+            st.markdown(f"""
+            <div class="neon-metric-box">
+                <div class="neon-metric-val" style="color: {h_color};">{h_val:.1f} %</div>
+                <div class="neon-metric-lbl">Humidity</div>
+                <div style="font-size: 9.5px; color: #94a3b8; margin-top: 2px;">Opt: {rh_opt_min}-{rh_opt_max}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with m3:
+            q10_rate, _ = engine.calculate_physics_step(t_val, crop_meta)
+            st.markdown(f"""
+            <div class="neon-metric-box">
+                <div class="neon-metric-val" style="color: #00f2fe;">{q10_rate:.2f}x</div>
+                <div class="neon-metric-lbl">Degradation r(T)</div>
+                <div style="font-size: 9.5px; color: #94a3b8; margin-top: 2px;">Q10: {crop_meta['Q10']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with m4:
+            # Check if analog A0 is present
+            if "analog_a0" in latest_r and latest_r["analog_a0"] is not None:
+                a0_val = latest_r["analog_a0"]
+                st.markdown(f"""
+                <div class="neon-metric-box">
+                    <div class="neon-metric-val" style="color: #a78bfa;">{a0_val:.0f}</div>
+                    <div class="neon-metric-lbl">MQ Sensor A0</div>
+                    <div style="font-size: 9.5px; color: #94a3b8; margin-top: 2px;">Analog ADC</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                # Vapor Pressure Deficit (VPD in kPa)
+                svp = 0.61078 * np.exp((17.27 * t_val) / (t_val + 237.3))
+                avp = svp * (h_val / 100.0)
+                vpd = max(0.0, svp - avp)
+                st.markdown(f"""
+                <div class="neon-metric-box">
+                    <div class="neon-metric-val" style="color: #a78bfa;">{vpd:.2f} kPa</div>
+                    <div class="neon-metric-lbl">VPD Deficit</div>
+                    <div style="font-size: 9.5px; color: #94a3b8; margin-top: 2px;">Transpiration</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # Dual-Axis Sensor History Plotly Chart
+        if len(history) > 0:
+            hist_df = pd.DataFrame(history)
+            hist_df["step"] = range(1, len(hist_df) + 1)
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=hist_df["step"], y=hist_df["temperature_C"],
+                name="Temperature (°C)", mode="lines+markers",
+                line=dict(color="#ff3366", width=2.5, shape="spline"),
+                marker=dict(size=4),
+                hovertemplate="Step %{x}: %{y:.1f} °C<extra></extra>"
+            ))
+            fig.add_trace(go.Scatter(
+                x=hist_df["step"], y=hist_df["humidity_RH"],
+                name="Humidity (% RH)", mode="lines+markers",
+                line=dict(color="#00f2fe", width=2.5, shape="spline"),
+                marker=dict(size=4),
+                yaxis="y2",
+                hovertemplate="Step %{x}: %{y:.1f} %% RH<extra></extra>"
+            ))
+
+            fig.add_hrect(
+                y0=t_opt_min, y1=t_opt_max, fillcolor="rgba(0, 245, 160, 0.12)",
+                line_width=0, annotation_text="Optimal Temp Band", annotation_position="top left",
+                annotation_font=dict(size=9, color="#00f5a0")
+            )
+
+            fig.update_layout(
+                height=230,
+                margin=dict(l=10, r=10, t=25, b=10),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#cbd5e1", size=10.5),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)),
+                yaxis=dict(title="Temp (°C)", color="#ff3366", showgrid=True, gridcolor="rgba(255,255,255,0.08)"),
+                yaxis2=dict(title="RH (%)", color="#00f2fe", overlaying="y", side="right", showgrid=False),
+                xaxis=dict(title="Telemetry Sensor Intervals (Hourly/Steps)", showgrid=False)
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Telemetry Log Table & Actions
+    with st.expander(f"📋 Sensor Telemetry Raw Data Stream Log ({len(history)} entries)", expanded=False):
+        if history:
+            log_df = pd.DataFrame(history)
+            st.dataframe(log_df.tail(20), use_container_width=True)
+            
+            c_act1, c_act2 = st.columns(2)
+            with c_act1:
+                csv_bytes = log_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Export Telemetry to CSV",
+                    data=csv_bytes,
+                    file_name=f"telemetry_{curr_shipment['id']}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            with c_act2:
+                if st.button("🗑️ Reset Sensor Log Buffer", use_container_width=True):
+                    curr_shipment["readings"] = [
+                        {"temperature_C": 24.5, "humidity_RH": 72.0, "delta_t_days": 1.0/24.0}
+                    ]
+                    st.toast("Sensor log buffer cleared!", icon="🧹")
+                    st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ==============================================================================
+# PAGE 2: 📷 CAMERA QUALITY VERIFICATION
+# ==============================================================================
+elif st.session_state.current_page == "📷 Camera Verification":
     st.markdown('<div class="cyber-card">', unsafe_allow_html=True)
     st.markdown("""
     <div class="cyber-card-title">
@@ -993,227 +1253,6 @@ if st.session_state.current_page == "📷 Camera Verification":
             curr_shipment["confidence"] = cnn_pred["confidence"]
             st.toast(f"✅ Synced {cnn_pred['crop']} ({cnn_pred['condition']}) to Shipment {curr_shipment['id']}!", icon="🔄")
             st.rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-# ==============================================================================
-# PAGE 2: 📡 ESP32 DETECTION & IOT TELEMETRY
-# ==============================================================================
-elif st.session_state.current_page == "📡 ESP32 IoT Detection":
-    st.markdown('<div class="cyber-card">', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="cyber-card-title">
-        <span>📡 ESP32 Edge Hardware Link & Environmental Telemetry Stream</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    e_col1, e_col2 = st.columns([1, 1.4])
-
-    with e_col1:
-        st.markdown("<b>🔌 Hardware Telemetry Source:</b>", unsafe_allow_html=True)
-        conn_mode = st.radio(
-            "Connection Protocol",
-            ["Simulator (Real-time Dynamic Stream)", "Physical Serial (USB/COM)", "Wi-Fi HTTP / IP Stream", "Manual Telemetry Injection"],
-            index=0
-        )
-
-        if conn_mode == "Physical Serial (USB/COM)":
-            com_ports_info = sensor_mgr.list_available_ports()
-            if com_ports_info:
-                port_options = [p["port"] for p in com_ports_info]
-                port_labels = {p["port"]: p["description"] for p in com_ports_info}
-                selected_port = st.selectbox("Select COM Port", port_options, format_func=lambda x: port_labels.get(x, x))
-                baud = st.selectbox("Baud Rate", [115200, 9600, 57600], index=0)
-                
-                col_c1, col_c2 = st.columns(2)
-                with col_c1:
-                    if st.button("🔌 Connect Serial", use_container_width=True):
-                        ok, msg = sensor_mgr.connect_serial(selected_port, baud)
-                        if ok:
-                            st.toast(f"✅ {msg}", icon="🔌")
-                        else:
-                            st.toast(f"❌ {msg}", icon="⚠️")
-                with col_c2:
-                    if st.button("❌ Disconnect", use_container_width=True):
-                        sensor_mgr.disconnect_serial()
-                        st.toast("Serial disconnected.", icon="ℹ️")
-                
-                if sensor_mgr.is_connected:
-                    st.markdown(f'<span class="badge-neon-green">🟢 ESP32 Active: {sensor_mgr.serial_port} @ {sensor_mgr.baud_rate}</span>', unsafe_allow_html=True)
-                    s_reading = sensor_mgr.read_serial_line()
-                    if s_reading:
-                        curr_shipment["readings"].append(s_reading.to_dict())
-                else:
-                    st.markdown('<span class="badge-neon-cyan">⚪ Status: Disconnected</span>', unsafe_allow_html=True)
-            else:
-                st.markdown("""
-                <div class="neon-callout">
-                    ⚠️ No physical serial COM ports found. Connect ESP32 via USB or select <b>Simulator</b>.
-                </div>
-                """, unsafe_allow_html=True)
-
-        elif conn_mode == "Wi-Fi HTTP / IP Stream":
-            esp32_url = st.text_input("ESP32 JSON Endpoint URL", "http://192.168.1.100/data")
-            if st.button("📡 Test Ping Endpoint", use_container_width=True):
-                r, msg = sensor_mgr.fetch_http_reading(esp32_url, timeout=1.5)
-                if r:
-                    st.toast(f"📡 Ping OK: {r.temperature_C}°C, {r.humidity_RH}% RH", icon="✅")
-                    curr_shipment["readings"].append(r.to_dict())
-                else:
-                    st.toast(f"❌ Ping Failed: {msg}", icon="⚠️")
-            st.caption("Expected JSON: `{\"temperature\": 24.5, \"humidity\": 71.8}`")
-
-        elif conn_mode == "Simulator (Real-time Dynamic Stream)":
-            sim_anomaly = st.selectbox(
-                "Environmental Stress Simulation Scenario",
-                ["NORMAL", "COOLING_FAILURE", "HEATWAVE", "HIGH_HUMIDITY"],
-                format_func=lambda x: {
-                    "NORMAL": "🟢 Normal Cold-Chain Compliance (24°C / 72% RH)",
-                    "COOLING_FAILURE": "🔴 Cooling Unit Failure (Rapid Warming)",
-                    "HEATWAVE": "🟠 High Heatwave Exposure (Thermal Spike)",
-                    "HIGH_HUMIDITY": "🔵 Excessive Moisture / Condensation Risk"
-                }[x]
-            )
-            sensor_mgr.sim_anomaly = sim_anomaly
-            sensor_mgr.sim_base_temp = st.slider("Base Temperature (°C)", 0.0, 45.0, 24.0, 0.5)
-            sensor_mgr.sim_base_humidity = st.slider("Base Relative Humidity (%)", 30.0, 98.0, 72.0, 1.0)
-            
-            sim_reading = sensor_mgr.generate_simulated_reading()
-            curr_shipment["readings"].append(sim_reading.to_dict())
-            if len(curr_shipment["readings"]) > 120:
-                curr_shipment["readings"] = curr_shipment["readings"][-120:]
-
-        elif conn_mode == "Manual Telemetry Injection":
-            man_t = st.slider("Manual Temp (°C)", -5.0, 50.0, 28.5, 0.1)
-            man_h = st.slider("Manual RH (%)", 20.0, 100.0, 68.0, 0.5)
-            if st.button("💉 Inject Single Reading", use_container_width=True):
-                r = sensor_mgr.get_latest_reading(curr_shipment["id"], manual_temp=man_t, manual_hum=man_h)
-                curr_shipment["readings"].append(r.to_dict())
-                st.toast(f"💉 Injected Reading: {man_t}°C, {man_h}% RH", icon="⚡")
-                st.rerun()
-
-    with e_col2:
-        history = curr_shipment.get("readings", [])
-        latest_r = history[-1] if history else {"temperature_C": 24.5, "humidity_RH": 72.0}
-
-        crop_meta = engine.get_crop_params(curr_shipment["crop"])
-        t_opt_min = crop_meta.get("T_opt_min", 12.0)
-        t_opt_max = crop_meta.get("T_opt_max", 20.0)
-        rh_opt_min = crop_meta.get("RH_opt_min", 85.0)
-        rh_opt_max = crop_meta.get("RH_opt_max", 95.0)
-
-        # 4 Metric Cards Row
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            t_val = latest_r["temperature_C"]
-            t_color = "#00f5a0" if t_opt_min <= t_val <= t_opt_max else ("#ff3366" if t_val > 30.0 else "#ffd166")
-            st.markdown(f"""
-            <div class="neon-metric-box">
-                <div class="neon-metric-val" style="color: {t_color};">{t_val:.1f} °C</div>
-                <div class="neon-metric-lbl">Temperature</div>
-                <div style="font-size: 9.5px; color: #94a3b8; margin-top: 2px;">Opt: {t_opt_min}-{t_opt_max}°C</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with m2:
-            h_val = latest_r["humidity_RH"]
-            h_color = "#00f5a0" if rh_opt_min <= h_val <= rh_opt_max else ("#ff3366" if h_val < 50.0 else "#ffd166")
-            st.markdown(f"""
-            <div class="neon-metric-box">
-                <div class="neon-metric-val" style="color: {h_color};">{h_val:.1f} %</div>
-                <div class="neon-metric-lbl">Humidity</div>
-                <div style="font-size: 9.5px; color: #94a3b8; margin-top: 2px;">Opt: {rh_opt_min}-{rh_opt_max}%</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with m3:
-            q10_rate, _ = engine.calculate_physics_step(t_val, crop_meta)
-            st.markdown(f"""
-            <div class="neon-metric-box">
-                <div class="neon-metric-val" style="color: #00f2fe;">{q10_rate:.2f}x</div>
-                <div class="neon-metric-lbl">Degradation r(T)</div>
-                <div style="font-size: 9.5px; color: #94a3b8; margin-top: 2px;">Q10: {crop_meta['Q10']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with m4:
-            # Vapor Pressure Deficit (VPD in kPa)
-            svp = 0.61078 * np.exp((17.27 * t_val) / (t_val + 237.3))
-            avp = svp * (h_val / 100.0)
-            vpd = max(0.0, svp - avp)
-            st.markdown(f"""
-            <div class="neon-metric-box">
-                <div class="neon-metric-val" style="color: #a78bfa;">{vpd:.2f} kPa</div>
-                <div class="neon-metric-lbl">VPD Deficit</div>
-                <div style="font-size: 9.5px; color: #94a3b8; margin-top: 2px;">Transpiration</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # Dual-Axis Sensor History Plotly Chart
-        if len(history) > 0:
-            hist_df = pd.DataFrame(history)
-            hist_df["step"] = range(1, len(hist_df) + 1)
-
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=hist_df["step"], y=hist_df["temperature_C"],
-                name="Temperature (°C)", mode="lines+markers",
-                line=dict(color="#ff3366", width=2.5, shape="spline"),
-                marker=dict(size=4),
-                hovertemplate="Step %{x}: %{y:.1f} °C<extra></extra>"
-            ))
-            fig.add_trace(go.Scatter(
-                x=hist_df["step"], y=hist_df["humidity_RH"],
-                name="Humidity (% RH)", mode="lines+markers",
-                line=dict(color="#00f2fe", width=2.5, shape="spline"),
-                marker=dict(size=4),
-                yaxis="y2",
-                hovertemplate="Step %{x}: %{y:.1f} %% RH<extra></extra>"
-            ))
-
-            fig.add_hrect(
-                y0=t_opt_min, y1=t_opt_max, fillcolor="rgba(0, 245, 160, 0.12)",
-                line_width=0, annotation_text="Optimal Temp Band", annotation_position="top left",
-                annotation_font=dict(size=9, color="#00f5a0")
-            )
-
-            fig.update_layout(
-                height=230,
-                margin=dict(l=10, r=10, t=25, b=10),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#cbd5e1", size=10.5),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)),
-                yaxis=dict(title="Temp (°C)", color="#ff3366", showgrid=True, gridcolor="rgba(255,255,255,0.08)"),
-                yaxis2=dict(title="RH (%)", color="#00f2fe", overlaying="y", side="right", showgrid=False),
-                xaxis=dict(title="Telemetry Sensor Intervals (Hourly/Steps)", showgrid=False)
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-    # Telemetry Log Table & Actions
-    with st.expander(f"📋 Sensor Telemetry Raw Data Stream Log ({len(history)} entries)", expanded=False):
-        if history:
-            log_df = pd.DataFrame(history)
-            st.dataframe(log_df.tail(20), use_container_width=True)
-            
-            c_act1, c_act2 = st.columns(2)
-            with c_act1:
-                csv_bytes = log_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Export Telemetry to CSV",
-                    data=csv_bytes,
-                    file_name=f"telemetry_{curr_shipment['id']}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-            with c_act2:
-                if st.button("🗑️ Reset Sensor Log Buffer", use_container_width=True):
-                    curr_shipment["readings"] = [
-                        {"temperature_C": 24.5, "humidity_RH": 72.0, "delta_t_days": 1.0/24.0}
-                    ]
-                    st.toast("Sensor log buffer cleared!", icon="🧹")
-                    st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
