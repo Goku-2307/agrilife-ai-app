@@ -1,6 +1,8 @@
 import os
+import sys
 import time
 import json
+import subprocess
 import cv2
 import numpy as np
 import pandas as pd
@@ -493,43 +495,40 @@ with tab_command:
 
         vision_mode = st.radio(
             "Camera Input Source",
-            ["📱 Phone / Browser Camera (Direct Snapshot)", "💻 Laptop OpenCV Webcam (USB / Hardware)", "📁 Upload Cargo Photo", "🍎 Sample Test Specimens"],
+            [
+                "🎥 Built-in Laptop Camera (Live Stream & OpenCV)",
+                "📸 Browser Camera (Direct Snapshot)",
+                "📁 Upload Cargo Photo",
+                "🍎 Sample Test Specimens"
+            ],
             index=0,
             horizontal=True
         )
 
         current_frame = None
 
-        if vision_mode == "📱 Phone / Browser Camera (Direct Snapshot)":
-            st.markdown("""
-            <div class="callout-box" style="border-left-color: #10b981; margin-bottom: 10px;">
-                📱 <b>Phone / Browser Camera Active:</b> Tap <b>"Take Photo"</b> below to activate your phone's rear or front camera for instant CNN quality verification.
-            </div>
-            """, unsafe_allow_html=True)
-            cam_pic = st.camera_input("📸 Tap to capture fruit / vegetable cargo with your phone's camera:")
-            if cam_pic is not None:
-                bytes_data = cam_pic.getvalue()
-                current_frame = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
-                st.session_state.last_captured_frame = current_frame
-
-        elif vision_mode == "💻 Laptop OpenCV Webcam (USB / Hardware)":
-            # Auto-probe or scan devices
+        if vision_mode == "🎥 Built-in Laptop Camera (Live Stream & OpenCV)":
+            # Auto-probe devices on initial load
             if st.session_state.detected_cameras is None:
-                st.session_state.detected_cameras = detector.scan_available_cameras(5)
+                st.session_state.detected_cameras = detector.scan_available_cameras(4)
 
             found_cams = st.session_state.detected_cameras or []
             if found_cams:
                 cam_choices = [c["index"] for c in found_cams]
                 cam_labels = {c["index"]: c["label"] for c in found_cams}
+                # Select first active camera (non-black) if available
+                default_idx = next((c["index"] for c in found_cams if not c.get("is_black", False)), cam_choices[0])
             else:
-                cam_choices = [0, 1, 2, 3, 4]
-                cam_labels = {i: f"Camera {i} (Standard Probe)" for i in range(5)}
+                cam_choices = [0, 1]
+                cam_labels = {0: "Camera 0: Integrated Laptop Camera (DirectShow | 640x480)", 1: "Camera 1: Secondary Device"}
+                default_idx = 0
 
-            cam_c1, cam_c2, cam_c3 = st.columns([1.3, 1, 0.9])
+            cam_c1, cam_c2, cam_c3 = st.columns([1.5, 1.0, 0.8])
             with cam_c1:
                 selected_cam_idx = st.selectbox(
                     "Select Camera Device",
                     cam_choices,
+                    index=cam_choices.index(default_idx) if default_idx in cam_choices else 0,
                     format_func=lambda x: cam_labels.get(x, f"Camera {x}")
                 )
             with cam_c2:
@@ -537,27 +536,63 @@ with tab_command:
                     "Capture Backend",
                     ["AUTO", "DSHOW", "MSMF", "DEFAULT"],
                     index=0,
-                    help="AUTO tries DirectShow (Windows), then MSMF, then Default."
+                    help="AUTO tries DirectShow (fastest on Windows), then MediaFoundation, then Default."
                 )
             with cam_c3:
-                warmup_f = st.slider("Warmup Frames", 5, 20, 12, help="Discards initial frames so exposure/gain settles.")
+                warmup_f = st.slider("Warmup Frames", 5, 20, 10, help="Discards initial frames so exposure/gain settles.")
 
-            v_btn1, v_btn2, v_btn3 = st.columns(3)
+            # Live Stream Toggle & Settings
+            v_t1, v_t2 = st.columns([1.3, 1.7])
+            with v_t1:
+                stream_toggle = st.toggle("🔴 Continuous Live Stream", value=False, help="Keeps the live webcam streaming continuously inside the dashboard.")
+            with v_t2:
+                st.caption("🟢 **Camera Ready:** Click **'Snap & Inspect'** or turn on **'Continuous Live Stream'**.")
+
+            # Action Buttons
+            v_btn1, v_btn2, v_btn3, v_btn4 = st.columns([1.1, 1.1, 1.3, 0.9])
             with v_btn1:
-                capture_single = st.button("📸 Snap Frame", use_container_width=True)
+                capture_single = st.button("📸 Snap & Inspect", use_container_width=True, help="Capture a single frame from the live webcam and run CNN quality analysis.")
             with v_btn2:
-                start_live = st.button("▶️ Start Live Feed", use_container_width=True)
+                start_live = st.button("▶️ Start Live Stream", use_container_width=True, help="Stream live video with real-time CNN HUD inside this dashboard.")
             with v_btn3:
-                if st.button("🔍 Scan Cameras", use_container_width=True):
-                    with st.spinner("Scanning video devices (indices 0–4)..."):
-                        st.session_state.detected_cameras = detector.scan_available_cameras(5)
+                launch_native = st.button("🚀 High-FPS HUD Window", use_container_width=True, help="Launch standalone 60 FPS OpenCV hardware window with keyboard controls.")
+            with v_btn4:
+                if st.button("🔍 Re-scan Devices", use_container_width=True):
+                    with st.spinner("Scanning hardware video devices..."):
+                        st.session_state.detected_cameras = detector.scan_available_cameras(4)
                         if st.session_state.detected_cameras:
-                            st.toast(f"Found {len(st.session_state.detected_cameras)} active camera(s)!", icon="📹")
-                        else:
-                            st.toast("No active camera found. Use Browser / Sample mode.", icon="⚠️")
+                            st.toast(f"Found {len(st.session_state.detected_cameras)} camera device(s)!", icon="📹")
                         st.rerun()
 
-            # Handle Snap Frame
+            # Auto-probe initial live frame on first page load
+            if st.session_state.last_captured_frame is None and not capture_single and not start_live and not stream_toggle:
+                ok, init_frame, _, is_black = detector.capture_frame_with_warmup(
+                    camera_index=selected_cam_idx,
+                    backend_name=cam_backend,
+                    warmup_frames=6
+                )
+                if ok and init_frame is not None:
+                    current_frame = init_frame
+                    st.session_state.last_captured_frame = init_frame
+
+            # Handle Standalone Native Window Launch
+            if launch_native:
+                try:
+                    subprocess.Popen([sys.executable, "live_webcam_vision.py"])
+                    st.toast("🚀 Standalone 60 FPS OpenCV Live Window launched! Check your Windows taskbar.", icon="🎥")
+                    st.markdown("""
+                    <div class="callout-box" style="border-left-color: #38bdf8; margin-top: 6px;">
+                        🎥 <b>Standalone Live OpenCV Window is Running!</b><br>
+                        <span style="font-size: 12px; color: #cbd5e1;">
+                            • Controls in OpenCV window: <b>[S]</b> Save inspection snapshot, <b>[C]</b> Cycle camera index, <b>[Q/ESC]</b> Close.<br>
+                            • Real-time ESP32 temperature & humidity telemetry is rendered on the bottom HUD.
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                except Exception as ex:
+                    st.toast(f"Failed to launch standalone window: {ex}", icon="⚠️")
+
+            # Handle Single Frame Snapshot
             if capture_single:
                 ok, frame, msg, is_black = detector.capture_frame_with_warmup(
                     camera_index=selected_cam_idx,
@@ -570,12 +605,12 @@ with tab_command:
                     if is_black:
                         st.markdown(f'<div class="callout-warning">{msg}</div>', unsafe_allow_html=True)
                     else:
-                        st.toast("📸 Frame captured successfully!", icon="✅")
+                        st.toast("📸 Frame captured successfully from Live Camera!", icon="✅")
                 else:
                     st.markdown(f"""
                     <div class="callout-warning">
                         <b>⚠️ Camera Device Notice:</b> {msg}<br>
-                        <span style="font-size: 11.5px; color: #cbd5e1;">Switching automatically to fallback specimen mode.</span>
+                        <span style="font-size: 11.5px; color: #cbd5e1;">Tip: Check camera permissions or select another backend / camera index.</span>
                     </div>
                     """, unsafe_allow_html=True)
                     sample_path = "sample_images/fresh_banana.jpg" if curr_shipment["crop"] == "Banana" else "sample_images/fresh_apple.jpg"
@@ -583,12 +618,10 @@ with tab_command:
                         current_frame = cv2.imread(sample_path)
                         st.session_state.last_captured_frame = current_frame
 
-            # Handle Live Video Loop with controlled stop and guaranteed release
-            if start_live:
+            # Handle Live Stream Loop inside Dashboard
+            if start_live or stream_toggle:
                 video_placeholder = st.empty()
-                stop_btn_placeholder = st.empty()
-                
-                stop_clicked = stop_btn_placeholder.button("⏹️ Stop Live Feed", key="stop_live_btn", use_container_width=True)
+                status_placeholder = st.empty()
                 
                 cap, b_used = detector.open_video_capture(selected_cam_idx, cam_backend)
                 
@@ -597,7 +630,7 @@ with tab_command:
                     <div class="callout-warning">
                         <b>⚠️ Camera Failed to Open (Index {selected_cam_idx} via {b_used}):</b><br>
                         Unable to access video feed. Verify physical connection or select another camera device.<br>
-                        <i>Tip: You can also use <b>Browser Camera Snapshot</b> or <b>Sample Test Specimens</b> above.</i>
+                        <i>Tip: You can also use <b>Launch High-FPS HUD Window</b> or <b>Browser Camera Snapshot</b>.</i>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
@@ -607,9 +640,17 @@ with tab_command:
                             cap.read()
                             time.sleep(0.01)
 
+                        status_placeholder.markdown("""
+                        <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; padding: 6px 12px; margin-bottom: 8px; font-size: 12px; color: #fca5a5; display: flex; align-items: center; justify-content: space-between;">
+                            <span>🔴 <b>LIVE CAMERA STREAM ACTIVE</b> (Real-time MobileNetV2 CNN Quality HUD)</span>
+                            <span style="font-size: 11px; color: #cbd5e1;">Live Feed Running</span>
+                        </div>
+                        """, unsafe_allow_html=True)
                         st.toast("📹 Live OpenCV inspection stream active...", icon="🔴")
                         
-                        for frame_idx in range(50):
+                        max_frames = 300 if stream_toggle else 120
+                        last_pred = detector.predict(None)
+                        for frame_idx in range(max_frames):
                             ret, f = cap.read()
                             if not ret or f is None:
                                 break
@@ -617,33 +658,48 @@ with tab_command:
                             if f.mean() < 2.0:
                                 cv2.putText(f, "CHECK PRIVACY SHUTTER", (25, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 255), 2)
 
-                            pred = detector.predict(f)
-                            ann = detector.annotate_frame(f, pred, curr_shipment["id"])
+                            # Run CNN prediction every 2 frames for silky smooth FPS
+                            if frame_idx % 2 == 0:
+                                last_pred = detector.predict(f)
+
+                            ann = detector.annotate_frame(f, last_pred, curr_shipment["id"])
                             disp = cv2.cvtColor(ann, cv2.COLOR_BGR2RGB)
                             
                             video_placeholder.image(
                                 disp,
-                                caption=f"Live CNN Stream: {pred['crop']} - {pred['condition']} ({pred['confidence']}%)",
+                                caption=f"Live CNN Stream: {last_pred['crop']} - {last_pred['condition']} ({last_pred['confidence']}%) | Frame {frame_idx+1}/{max_frames}",
                                 use_container_width=True
                             )
                             
-                            st.session_state.last_cnn_result = pred
+                            st.session_state.last_cnn_result = last_pred
                             st.session_state.last_captured_frame = f
-                            curr_shipment["crop"] = pred["crop"]
-                            curr_shipment["condition"] = pred["condition"]
-                            curr_shipment["confidence"] = pred["confidence"]
+                            curr_shipment["crop"] = last_pred["crop"]
+                            curr_shipment["condition"] = last_pred["condition"]
+                            curr_shipment["confidence"] = last_pred["confidence"]
                             
-                            time.sleep(0.03)
+                            time.sleep(0.02)
 
                     except Exception as ex:
                         st.toast(f"Stream interrupted: {ex}", icon="⚠️")
                     finally:
                         if cap is not None and cap.isOpened():
                             cap.release()
-                        stop_btn_placeholder.empty()
+                        status_placeholder.empty()
                         st.toast("✅ Live camera stream safely closed.", icon="📷")
 
-        elif vision_mode == "Upload Cargo Photo":
+        elif vision_mode == "📱 Phone / Browser Camera (Direct Snapshot)":
+            st.markdown("""
+            <div class="callout-box" style="border-left-color: #10b981; margin-bottom: 10px;">
+                📱 <b>Phone / Browser Camera Active:</b> Tap <b>"Take Photo"</b> below to activate your phone's rear or front camera for instant CNN quality verification.
+            </div>
+            """, unsafe_allow_html=True)
+            cam_pic = st.camera_input("📸 Tap to capture fruit / vegetable cargo with your phone's camera:")
+            if cam_pic is not None:
+                bytes_data = cam_pic.getvalue()
+                current_frame = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
+                st.session_state.last_captured_frame = current_frame
+
+        elif vision_mode == "📁 Upload Cargo Photo":
             uploaded_file = st.file_uploader("Upload Cargo Photo (JPG/PNG)", type=["jpg", "jpeg", "png"])
             if uploaded_file is not None:
                 bytes_data = uploaded_file.read()

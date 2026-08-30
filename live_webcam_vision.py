@@ -49,13 +49,17 @@ def main():
 
     # 3. Discover and Open Camera
     print("[3/3] Scanning and Opening Video Camera...")
-    detected_cams = detector.scan_available_cameras(5)
+    detected_cams = detector.scan_available_cameras(4)
     cam_index = 0
     if detected_cams:
         print(f"Found {len(detected_cams)} camera device(s):")
         for c in detected_cams:
             print(f"  - {c['label']}")
-        cam_index = detected_cams[0]["index"]
+        active_cams = [c for c in detected_cams if not c.get("is_black", False)]
+        if active_cams:
+            cam_index = active_cams[0]["index"]
+        else:
+            cam_index = detected_cams[0]["index"]
     
     print(f"Opening Camera index {cam_index} with DirectShow / Multi-Backend Fallback...")
     cap, backend_used = detector.open_video_capture(cam_index, "AUTO")
