@@ -1,5 +1,5 @@
 """
-README UI & Technical Architecture Module for AgriLife AI
+README UI & Technical Architecture Module for Freshroute
 Provides an interactive, comprehensive visual documentation explorer,
 architectural blueprints, mathematical derivations, component breakdown,
 and interactive algorithm playgrounds directly within the Streamlit UI.
@@ -29,10 +29,10 @@ def render_readme_ui():
                     📖 Interactive System Documentation & Technical Blueprint
                 </span>
                 <h1 style="font-size: 28px; font-weight: 800; color: #f8fafc; margin: 10px 0 6px 0; letter-spacing: -0.5px;">
-                    AgriLife AI : System Architecture & Technical Manual
+                    Freshroute : System Architecture & Technical Manual
                 </h1>
                 <p style="color: #94a3b8; font-size: 14px; margin: 0; max-width: 900px; line-height: 1.5;">
-                    Comprehensive end-to-end documentation explaining every layer of the AgriLife AI platform — from physical ESP32 edge telemetry and MobileNetV2 computer vision to Q₁₀ kinetic physics models, XGBoost ML residual estimation, FEFO priority dispatching, and geospatial demand routing.
+                    Comprehensive end-to-end documentation explaining every layer of the Freshroute platform — from physical ESP32 edge telemetry and MobileNetV2 computer vision to Q₁₀ kinetic physics models, XGBoost ML residual estimation, FEFO priority dispatching, and geospatial demand routing.
                 </p>
             </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -67,7 +67,7 @@ def render_readme_ui():
     if doc_section == "🏛️ System Architecture & Dataflow":
         st.markdown("## 🏛️ System Architecture & End-to-End Dataflow")
         st.markdown("""
-        AgriLife AI bridges **physical edge IoT sensing**, **deep learning computer vision**, **biochemical kinetics physics**, **gradient boosted machine learning**, and **geospatial multi-objective optimization** to eliminate perishable post-harvest losses.
+        Freshroute bridges **physical edge IoT sensing**, **deep learning computer vision**, **biochemical kinetics physics**, **gradient boosted machine learning**, and **geospatial multi-objective optimization** to eliminate perishable post-harvest losses.
         """)
 
         # Visual Process Pipeline Flow
@@ -122,7 +122,7 @@ def render_readme_ui():
     elif doc_section == "🖥️ Frontend UI Components & Guide":
         st.markdown("## 🖥️ Frontend UI Components & Operational Guide")
         st.markdown("""
-        The AgriLife AI dashboard is engineered using Streamlit, custom CSS dark-mode glassmorphism styling, Plotly high-performance vector graphics, and OpenCV real-time rendering. Below is an exhaustive breakdown of every UI panel and widget.
+        The Freshroute dashboard is engineered using Streamlit, custom CSS dark-mode glassmorphism styling, Plotly high-performance vector graphics, and OpenCV real-time rendering. Below is an exhaustive breakdown of every UI panel and widget.
         """)
 
         c1, c2 = st.columns(2)
@@ -336,7 +336,7 @@ def render_readme_ui():
     elif doc_section == "🧠 Hybrid Shelf-Life Engine (Q₁₀ + XGBoost)":
         st.markdown("## 🧠 Hybrid Shelf-Life Engine: Q₁₀ Kinetic Physics + XGBoost Residual ML")
         st.markdown("""
-        Standard supply chains rely either on static expiration dates (which ignore real temperature excursions) or pure black-box ML models (which violate thermodynamic laws and fail on unseen temperatures). AgriLife AI implements a **Hybrid Physics-Informed Machine Learning Architecture**.
+        Standard supply chains rely either on static expiration dates (which ignore real temperature excursions) or pure black-box ML models (which violate thermodynamic laws and fail on unseen temperatures). Freshroute implements a **Hybrid Physics-Informed Machine Learning Architecture**.
         """)
 
         st.markdown("""
@@ -408,7 +408,7 @@ def render_readme_ui():
         st.markdown("""
         Traditional logistics operates on **FIFO (First-In, First-Out)** or fixed geographic routes. However, if Truck A loaded yesterday encountered a $35^\circ\text{C}$ cooling breakdown while Truck B loaded 3 days ago remained at $4^\circ\text{C}$, Truck A will spoil much sooner!
 
-        AgriLife AI implements **Dynamic FEFO Dispatching**:
+        Freshroute implements **Dynamic FEFO Dispatching**:
         """)
 
         st.markdown("""

@@ -1,6 +1,6 @@
-# 🥦 AgriLife AI : Complete UI & Backend Technical Architecture Manual
+# 🥦 Freshroute : Complete UI & Backend Technical Architecture Manual
 
-**AgriLife AI** is an enterprise-grade, end-to-end perishable supply chain intelligence, agro-cold chain telemetry, and dynamic logistics routing platform. It seamlessly integrates **physical ESP32 edge IoT telemetry**, **PyTorch MobileNetV2 computer vision**, **biochemical Arrhenius $Q_{10}$ kinetic physics**, **gradient boosted machine learning (XGBoost)**, and a **multi-objective FEFO (First-Expired, First-Out) geospatial routing engine** to eliminate transit spoilage and maximize agro-logistics profitability.
+**Freshroute** is an enterprise-grade, end-to-end perishable supply chain intelligence, agro-cold chain telemetry, and dynamic logistics routing platform. It seamlessly integrates **physical ESP32 edge IoT telemetry**, **PyTorch MobileNetV2 computer vision**, **biochemical Arrhenius $Q_{10}$ kinetic physics**, **gradient boosted machine learning (XGBoost)**, and a **multi-objective FEFO (First-Expired, First-Out) geospatial routing engine** to eliminate transit spoilage and maximize agro-logistics profitability.
 
 ---
 
@@ -323,4 +323,4 @@ streamlit run app.py --server.port 8501
 Open your browser at `http://localhost:8501`.
 
 ---
-*AgriLife AI Platform — Engineering resilient, data-driven, and zero-waste perishable supply chains.*
+*Freshroute Platform — Engineering resilient, data-driven, and zero-waste perishable supply chains.*

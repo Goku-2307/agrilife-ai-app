@@ -1,11 +1,11 @@
-# 🥦 AgriLife AI : Smart Agro-Cold Chain & Shelf-Life Intelligence Platform
+# 🥦 Freshroute : Smart Agro-Cold Chain & Shelf-Life Intelligence Platform
 
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B.svg)](https://streamlit.io/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-MobileNetV2-EE4C2C.svg)](https://pytorch.org/)
 [![XGBoost](https://img.shields.io/badge/XGBoost-Residual_ML-2E8B57.svg)](https://xgboost.readthedocs.io/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**AgriLife AI** is an enterprise-grade perishable supply chain intelligence platform integrating **ESP32 Edge IoT Telemetry**, **PyTorch MobileNetV2 Computer Vision**, **Biochemical Arrhenius $Q_{10}$ Kinetic Physics**, **Residual XGBoost Machine Learning**, and **FEFO (First-Expired, First-Out) Multi-Objective Geospatial Routing**.
+**Freshroute** is an enterprise-grade perishable supply chain intelligence platform integrating **ESP32 Edge IoT Telemetry**, **PyTorch MobileNetV2 Computer Vision**, **Biochemical Arrhenius $Q_{10}$ Kinetic Physics**, **Residual XGBoost Machine Learning**, and **FEFO (First-Expired, First-Out) Multi-Objective Geospatial Routing**.
 
 ---
 

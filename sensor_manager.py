@@ -164,7 +164,7 @@ class ESP32SensorManager:
         try:
             req = urllib.request.Request(
                 url,
-                headers={"User-Agent": "AgriLife-Dashboard/2.4", "Accept": "application/json"}
+                headers={"User-Agent": "Freshroute-Dashboard/2.4", "Accept": "application/json"}
             )
             with urllib.request.urlopen(req, timeout=timeout) as response:
                 content = response.read().decode("utf-8")

@@ -14,7 +14,7 @@ from shelf_life_engine import ShelfLifeEngine
 
 def main():
     print("=" * 70)
-    print("   AGRILIFE AI - STANDALONE OPENCV LIVE VISION & HARDWARE HUD")
+    print("   FRESHROUTE - STANDALONE OPENCV LIVE VISION & HARDWARE HUD")
     print("=" * 70)
     
     # 1. Initialize PyTorch CNN & Shelf Life Engine
@@ -151,7 +151,7 @@ def main():
             )
 
             # Show Native OpenCV Window
-            cv2.imshow("AgriLife AI - Standalone Live OpenCV Hardware Window", annotated)
+            cv2.imshow("Freshroute - Standalone Live OpenCV Hardware Window", annotated)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q') or key == 27:

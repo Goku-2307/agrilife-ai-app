@@ -1,5 +1,5 @@
 /*
-  AgriLife AI - ESP32 Cold-Chain Environmental Telemetry System
+  Freshroute - ESP32 Cold-Chain Environmental Telemetry System
   ==============================================================
   Reads Temperature & Relative Humidity from DHT22 / DHT11 sensor
   and transmits data via:
@@ -59,7 +59,7 @@ void setup() {
   Serial.println("[DHT] Sensor initialized.");
 
   // Initialize BLE Device
-  BLEDevice::init("AgriLife-ESP32-Truck");
+  BLEDevice::init("Freshroute-ESP32-Truck");
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 

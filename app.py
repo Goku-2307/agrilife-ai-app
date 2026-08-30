@@ -20,7 +20,7 @@ from readme_ui import render_readme_ui, render_algorithm_playground
 # STREAMLIT PAGE CONFIGURATION & STYLING
 # ==============================================================================
 st.set_page_config(
-    page_title="AgriLife AI | Smart Agro-Cold Chain & Shelf-Life Intelligence",
+    page_title="Freshroute | Smart Agro-Cold Chain & Shelf-Life Intelligence",
     page_icon="🥦",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -414,7 +414,7 @@ with st.sidebar:
     auto_refresh = st.checkbox("⚡ Auto-Stream Telemetry (2s interval)", value=False)
     
     st.markdown("---")
-    st.caption("AgriLife Hybrid AI Intelligence System v2.4")
+    st.caption("Freshroute Hybrid AI Intelligence System v2.4")
 
 
 # ==============================================================================
@@ -424,7 +424,7 @@ st.markdown(f"""
 <div class="hero-banner">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <div>
-            <h1 class="hero-title">🌱 AgriLife AI : Agro-Logistics & Shelf-Life Command Center</h1>
+            <h1 class="hero-title">🌱 Freshroute : Agro-Logistics & Shelf-Life Command Center</h1>
             <p class="hero-subtitle">
                 Cargo <b>{curr_shipment['id']}</b> &nbsp;|&nbsp; 
                 Origin: <b>{curr_shipment['farmer']}</b> &nbsp;|&nbsp; 
