@@ -87,7 +87,12 @@ class ESP32SensorManager:
             results = []
             for p in serial.tools.list_ports.comports():
                 desc = f"{p.device} ({p.description})"
-                results.append({"port": p.device, "description": desc, "hwid": getattr(p, "hwid", "")})
+                results.append({
+                    "port": p.device,
+                    "description": desc,
+                    "hwid": getattr(p, "hwid", ""),
+                    "manufacturer": getattr(p, "manufacturer", "Unknown")
+                })
             return results
         except Exception:
             return []
@@ -101,7 +106,8 @@ class ESP32SensorManager:
         for p in ports:
             desc = p["description"].lower()
             hwid = p.get("hwid", "").lower()
-            if any(k in desc or k in hwid for k in ["cp210", "ch340", "ch341", "ftdi", "uart", "esp32", "usb to uart", "usb serial"]):
+            mfg = str(p.get("manufacturer", "")).lower()
+            if any(k in desc or k in hwid or k in mfg for k in ["cp210", "silicon labs", "ch340", "ch341", "ftdi", "uart", "esp32", "usb to uart", "usb serial"]):
                 return p["port"]
         return ports[0]["port"]
 
@@ -112,6 +118,28 @@ class ESP32SensorManager:
             ok, _ = self.connect_serial(best_port, 115200)
             return ok
         return False
+
+    def probe_port(self, port: str, baud_rate: int = 115200, timeout: float = 1.0) -> Tuple[bool, str, List[str]]:
+        """Probes a port to see if data is actively arriving without breaking ongoing connections"""
+        if not SERIAL_AVAILABLE:
+            return False, "pyserial not available", []
+
+        sample_lines = []
+        try:
+            test_conn = serial.Serial(port, baud_rate, timeout=timeout, dsrdtr=False, rtscts=False)
+            test_conn.dtr = False
+            test_conn.rts = False
+            start_t = time.time()
+            while time.time() - start_t < timeout:
+                raw = test_conn.readline()
+                if raw:
+                    line = raw.decode("utf-8", errors="ignore").strip()
+                    if line:
+                        sample_lines.append(line)
+            test_conn.close()
+            return True, f"Port {port} opened successfully ({len(sample_lines)} lines received)", sample_lines
+        except Exception as e:
+            return False, f"Failed to probe {port}: {str(e)}", []
 
     def connect_serial(self, port: str, baud_rate: int = 115200) -> Tuple[bool, str]:
         """Connects to physical ESP32 via USB Serial COM port with background reader thread"""

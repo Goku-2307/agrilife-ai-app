@@ -43,7 +43,7 @@ if "shipments" not in st.session_state:
             "truck_lat": 13.0400,
             "truck_lon": 80.1200,
             "readings": [
-                {"temperature_C": 24.2 + (i % 3) * 0.4, "humidity_RH": 72.0 - (i % 4) * 0.5, "delta_t_days": 1.0/24.0}
+                {"temperature_C": 24.2 + (i % 3) * 0.4, "humidity_RH": 72.0 - (i % 4) * 0.5, "delta_t_days": 1.0/24.0, "timestamp": time.time() - (24-i)*3600}
                 for i in range(24)
             ]
         },
@@ -60,7 +60,7 @@ if "shipments" not in st.session_state:
             "truck_lat": 12.9800,
             "truck_lon": 80.0500,
             "readings": [
-                {"temperature_C": 28.5 + (i % 2) * 0.8, "humidity_RH": 65.0 - (i % 3) * 1.0, "delta_t_days": 1.0/24.0}
+                {"temperature_C": 28.5 + (i % 2) * 0.8, "humidity_RH": 65.0 - (i % 3) * 1.0, "delta_t_days": 1.0/24.0, "timestamp": time.time() - (32-i)*3600}
                 for i in range(32)
             ]
         },
@@ -77,7 +77,7 @@ if "shipments" not in st.session_state:
             "truck_lat": 13.0800,
             "truck_lon": 80.2000,
             "readings": [
-                {"temperature_C": 4.5 + (i % 2) * 0.3, "humidity_RH": 91.0 + (i % 3) * 0.5, "delta_t_days": 1.0/24.0}
+                {"temperature_C": 4.5 + (i % 2) * 0.3, "humidity_RH": 91.0 + (i % 3) * 0.5, "delta_t_days": 1.0/24.0, "timestamp": time.time() - (48-i)*3600}
                 for i in range(48)
             ]
         }
@@ -619,8 +619,7 @@ with st.sidebar:
                 "truck_lat": 13.0400,
                 "truck_lon": 80.1200,
                 "readings": [
-                    {"temperature_C": 24.5, "humidity_RH": 72.0, "delta_t_days": 1.0/24.0}
-                    for _ in range(24)
+                    {"temperature_C": 24.5, "humidity_RH": 72.0, "delta_t_days": 1.0/24.0, "timestamp": time.time() - 3600}
                 ]
             }
             st.session_state.active_shipment_id = new_id
@@ -652,9 +651,13 @@ inject_theme_css(st.session_state.ui_theme)
 if sensor_mgr.is_connected:
     live_r = sensor_mgr.read_serial_line()
     if live_r:
-        curr_shipment["readings"].append(live_r.to_dict())
-        if len(curr_shipment["readings"]) > 120:
-            curr_shipment["readings"] = curr_shipment["readings"][-120:]
+        readings_list = curr_shipment.get("readings", [])
+        last_ts = readings_list[-1].get("timestamp") if readings_list else None
+        if last_ts != live_r.timestamp:
+            readings_list.append(live_r.to_dict())
+            if len(readings_list) > 120:
+                readings_list = readings_list[-120:]
+            curr_shipment["readings"] = readings_list
 
 
 # ==============================================================================
@@ -750,8 +753,9 @@ if st.session_state.current_page == "📡 ESP32 IoT Detection":
                 )
                 baud = st.selectbox("Baud Rate", [115200, 9600, 57600], index=0)
                 
-                col_c1, col_c2 = st.columns(2)
-                with col_c1:
+                # Action Buttons
+                c_btn1, c_btn2, c_btn3 = st.columns([1.2, 1.0, 1.1])
+                with c_btn1:
                     if st.button("🔌 Connect ESP32", use_container_width=True):
                         ok, msg = sensor_mgr.connect_serial(selected_port, baud)
                         if ok:
@@ -759,11 +763,31 @@ if st.session_state.current_page == "📡 ESP32 IoT Detection":
                         else:
                             st.toast(f"❌ {msg}", icon="⚠️")
                         st.rerun()
-                with col_c2:
+                with c_btn2:
                     if st.button("❌ Disconnect", use_container_width=True):
                         sensor_mgr.disconnect_serial()
                         st.toast("Serial disconnected.", icon="ℹ️")
                         st.rerun()
+                with c_btn3:
+                    if st.button("⚡ Auto-Connect", use_container_width=True, help="Scans and automatically connects to the detected ESP32 port."):
+                        ok = sensor_mgr.auto_connect_if_available()
+                        if ok:
+                            st.toast(f"✅ Auto-connected to {sensor_mgr.serial_port}!", icon="⚡")
+                        else:
+                            st.toast("⚠️ Could not auto-connect.", icon="ℹ️")
+                        st.rerun()
+
+                # Diagnostic Probe Tool
+                with st.expander("🔍 Test / Probe Port Data Stream", expanded=False):
+                    if st.button(f"Probe {selected_port} Stream (1.5s sample)", use_container_width=True):
+                        with st.spinner(f"Probing {selected_port}..."):
+                            ok_p, p_msg, samples = sensor_mgr.probe_port(selected_port, baud, timeout=1.5)
+                            if ok_p:
+                                st.success(p_msg)
+                                for s in samples[:6]:
+                                    st.code(s, language="text")
+                            else:
+                                st.error(p_msg)
                 
                 # Connection Status Badge & Details
                 if sensor_mgr.is_connected:
@@ -771,7 +795,7 @@ if st.session_state.current_page == "📡 ESP32 IoT Detection":
                     st.markdown(f"""
                     <div class="neon-callout" style="margin-top: 8px;">
                         <b>Status:</b> {sensor_mgr.status_message}<br>
-                        <b>Raw Output:</b> <code>{sensor_mgr.latest_raw_line if sensor_mgr.latest_raw_line else 'Waiting for data...'}</code>
+                        <b>Raw Stream:</b> <code>{sensor_mgr.latest_raw_line if sensor_mgr.latest_raw_line else 'Waiting for data...'}</code>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
@@ -779,10 +803,15 @@ if st.session_state.current_page == "📡 ESP32 IoT Detection":
             else:
                 st.markdown("""
                 <div class="neon-callout-warn">
-                    ⚠️ No physical serial COM ports detected. Connect ESP32 via USB and click <b>Refresh</b> below.
+                    <b>⚠️ No physical serial COM ports detected on this PC:</b><br>
+                    1. Ensure the USB cable is a <b>Data Cable</b> (not charge-only).<br>
+                    2. Unplug and re-plug the ESP32 into another USB port.<br>
+                    3. Ensure CP210x or CH340 USB drivers are installed.<br>
+                    4. Close any open serial monitors (e.g. Arduino IDE).
                 </div>
                 """, unsafe_allow_html=True)
                 if st.button("🔍 Scan for COM Ports", use_container_width=True):
+                    sensor_mgr.auto_connect_if_available()
                     st.rerun()
 
         elif conn_mode == "Wi-Fi HTTP / IP Stream":
@@ -870,7 +899,6 @@ if st.session_state.current_page == "📡 ESP32 IoT Detection":
             """, unsafe_allow_html=True)
 
         with m4:
-            # Check if analog A0 is present
             if "analog_a0" in latest_r and latest_r["analog_a0"] is not None:
                 a0_val = latest_r["analog_a0"]
                 st.markdown(f"""
@@ -881,7 +909,6 @@ if st.session_state.current_page == "📡 ESP32 IoT Detection":
                 </div>
                 """, unsafe_allow_html=True)
             else:
-                # Vapor Pressure Deficit (VPD in kPa)
                 svp = 0.61078 * np.exp((17.27 * t_val) / (t_val + 237.3))
                 avp = svp * (h_val / 100.0)
                 vpd = max(0.0, svp - avp)
@@ -953,7 +980,7 @@ if st.session_state.current_page == "📡 ESP32 IoT Detection":
             with c_act2:
                 if st.button("🗑️ Reset Sensor Log Buffer", use_container_width=True):
                     curr_shipment["readings"] = [
-                        {"temperature_C": 24.5, "humidity_RH": 72.0, "delta_t_days": 1.0/24.0}
+                        {"temperature_C": 24.5, "humidity_RH": 72.0, "delta_t_days": 1.0/24.0, "timestamp": time.time()}
                     ]
                     st.toast("Sensor log buffer cleared!", icon="🧹")
                     st.rerun()
