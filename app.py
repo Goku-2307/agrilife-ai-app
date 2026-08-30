@@ -648,7 +648,7 @@ inject_theme_css(st.session_state.ui_theme)
 
 
 # ==============================================================================
-# AUTOMATIC TELEMETRY POLLING FROM ESP32 SERIAL STREAM
+# AUTOMATIC TELEMETRY POLLING FROM ESP32 SERIAL STREAM OR CLOUD BRIDGE
 # ==============================================================================
 if sensor_mgr.is_connected:
     live_r = sensor_mgr.read_serial_line()
@@ -660,6 +660,18 @@ if sensor_mgr.is_connected:
             if len(readings_list) > 120:
                 readings_list = readings_list[-120:]
             curr_shipment["readings"] = readings_list
+elif getattr(sensor_mgr, "active_mode", "") == "CLOUD":
+    topic = getattr(sensor_mgr, "cloud_topic", "freshroute_sv_gokul_esp32")
+    if hasattr(sensor_mgr, "fetch_cloud_bridge_reading"):
+        live_r, _ = sensor_mgr.fetch_cloud_bridge_reading(topic, timeout=1.5)
+        if live_r:
+            readings_list = curr_shipment.get("readings", [])
+            last_ts = readings_list[-1].get("timestamp") if readings_list else None
+            if last_ts != live_r.timestamp:
+                readings_list.append(live_r.to_dict())
+                if len(readings_list) > 120:
+                    readings_list = readings_list[-120:]
+                curr_shipment["readings"] = readings_list
 
 
 # ==============================================================================
@@ -733,15 +745,62 @@ if st.session_state.current_page == "📡 ESP32 IoT Detection":
     with e_col1:
         st.markdown("<b>🔌 Hardware Telemetry Connection:</b>", unsafe_allow_html=True)
         available_ports = sensor_mgr.list_available_ports()
-        default_mode_idx = 0 if available_ports else 1
+        is_cloud_env = (os.name != "nt") or (len(available_ports) == 0)
+
+        protocols = [
+            "☁️ Cloud Live Bridge (Local ESP32 ➡️ Cloud)",
+            "Physical Serial (USB/COM)",
+            "Simulator (Real-time Dynamic Stream)",
+            "Wi-Fi HTTP / IP Stream",
+            "Manual Telemetry Injection"
+        ]
+        default_mode_idx = 0 if is_cloud_env else 1
 
         conn_mode = st.radio(
             "Connection Protocol",
-            ["Physical Serial (USB/COM)", "Simulator (Real-time Dynamic Stream)", "Wi-Fi HTTP / IP Stream", "Manual Telemetry Injection"],
+            protocols,
             index=default_mode_idx
         )
 
-        if conn_mode == "Physical Serial (USB/COM)":
+        if conn_mode == "☁️ Cloud Live Bridge (Local ESP32 ➡️ Cloud)":
+            sensor_mgr.active_mode = "CLOUD"
+            topic_val = st.text_input("Cloud Channel Topic", value=getattr(sensor_mgr, "cloud_topic", "freshroute_sv_gokul_esp32"))
+            sensor_mgr.cloud_topic = topic_val
+
+            cb_col1, cb_col2 = st.columns([1.2, 1.0])
+            with cb_col1:
+                if st.button("📡 Fetch Cloud Stream Now", use_container_width=True):
+                    r, msg = sensor_mgr.fetch_cloud_bridge_reading(topic_val, timeout=2.0)
+                    if r:
+                        st.toast(f"✅ Cloud Data Synced: {r.temperature_C}°C | {r.humidity_RH}% RH", icon="☁️")
+                        curr_shipment["readings"].append(r.to_dict())
+                        st.rerun()
+                    else:
+                        st.toast(f"⚠️ {msg}", icon="ℹ️")
+            with cb_col2:
+                if st.button("🔄 Trigger Sync", use_container_width=True):
+                    st.rerun()
+
+            if sensor_mgr.last_reading and sensor_mgr.active_mode == "CLOUD":
+                st.markdown(f'<div style="margin-top: 8px;"><span class="badge-neon-green">🟢 Cloud Bridge Connected: Live Hardware Stream</span></div>', unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class="neon-callout" style="margin-top: 8px;">
+                    <b>Status:</b> {sensor_mgr.status_message}<br>
+                    <b>Channel:</b> <code>https://ntfy.sh/{topic_val}</code><br>
+                    <b>Latest Telemetry:</b> <code>{sensor_mgr.latest_raw_line}</code>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div class="neon-callout">
+                    <b>☁️ How to Stream Physical ESP32 to Streamlit Cloud:</b><br>
+                    1. Keep ESP32 connected via USB cable to your laptop/PC.<br>
+                    2. Double-click <b><code>run_cloud_bridge.bat</code></b> (or run <code>python esp32_cloud_bridge.py</code>) on your PC.<br>
+                    3. Live physical sensor data streams in real time right here!
+                </div>
+                """, unsafe_allow_html=True)
+
+        elif conn_mode == "Physical Serial (USB/COM)":
             if available_ports:
                 port_options = [p["port"] for p in available_ports]
                 port_labels = {p["port"]: p["description"] for p in available_ports}

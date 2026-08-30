@@ -3,6 +3,7 @@ import json
 import random
 import math
 import re
+import os
 import threading
 import urllib.request
 from typing import Dict, List, Any, Optional, Tuple
@@ -49,17 +50,18 @@ class SensorReading:
 
 class ESP32SensorManager:
     """
-    Manages real hardware ESP32 Serial COM connections via background thread,
+    Manages real hardware ESP32 Serial COM connections, Cloud Live Bridge (Local PC -> Cloud),
     Wi-Fi HTTP polling, and a high-fidelity real-time environmental simulation engine.
     """
     def __init__(self):
-        self.active_mode = "SERIAL" if SERIAL_AVAILABLE else "SIMULATOR"
+        self.active_mode = "SERIAL" if (SERIAL_AVAILABLE and os.name == "nt") else "CLOUD"
         self.serial_port: Optional[str] = None
         self.baud_rate: int = 115200
         self.serial_conn: Optional[Any] = None
         self.is_connected: bool = False
         self.status_message: str = "Ready to connect"
         self.latest_raw_line: str = ""
+        self.cloud_topic: str = "freshroute_sv_gokul_esp32"
         self.http_url: str = "http://192.168.1.100/data"
         self.last_reading: Optional[SensorReading] = None
         self.shipment_history: Dict[str, List[SensorReading]] = {}
@@ -75,8 +77,9 @@ class ESP32SensorManager:
         self.sim_anomaly: str = "NORMAL"
         self.sim_step_count: int = 0
 
-        # Auto-connect if an ESP32 port is available
-        self.auto_connect_if_available()
+        # Auto-connect if a local ESP32 serial port is available
+        if os.name == "nt":
+            self.auto_connect_if_available()
 
     @staticmethod
     def list_available_ports() -> List[Dict[str, str]]:
@@ -183,7 +186,6 @@ class ESP32SensorManager:
 
     def _serial_worker(self):
         """Continuous background thread listening for ESP32 sensor stream"""
-        # Discard first partial line if buffer has noise
         try:
             if self.serial_conn and self.serial_conn.is_open:
                 self.serial_conn.readline()
@@ -203,7 +205,6 @@ class ESP32SensorManager:
 
                 self.latest_raw_line = raw_line
 
-                # Check for sensor warmup message
                 if "warming up" in raw_line.lower():
                     self.status_message = "ESP32 Warming Up Sensor (~15-20s)..."
                     continue
@@ -230,7 +231,9 @@ class ESP32SensorManager:
                     return None
                 temp = float(data.get("temperature", data.get("temp", data.get("temperature_C", 25.0))))
                 hum = float(data.get("humidity", data.get("hum", data.get("humidity_RH", 70.0))))
-                return SensorReading(temp, hum, raw_line=raw_line)
+                a0 = float(data.get("analog_a0", data.get("a0", None))) if ("analog_a0" in data or "a0" in data) else None
+                d0 = int(data.get("digital_d0", data.get("d0", None))) if ("digital_d0" in data or "d0" in data) else None
+                return SensorReading(temp, hum, analog_a0=a0, digital_d0=d0, raw_line=raw_line)
             except Exception:
                 pass
 
@@ -242,17 +245,14 @@ class ESP32SensorManager:
                 if a0_match:
                     a0_val = float(a0_match.group(1))
                     d0_val = int(d0_match.group(1)) if d0_match else 0
-
-                    # Convert Analog ADC (0 - 1023) to realistic ambient chamber temperature & RH
-                    # Baseline ADC ~550-700 maps to 24°C - 28°C and 68% - 75% RH
                     norm_val = min(1023.0, max(0.0, a0_val)) / 1023.0
-                    temp = round(20.0 + norm_val * 12.0, 1)  # 20°C to 32°C range
-                    hum = round(62.0 + (1.0 - norm_val) * 26.0, 1)  # 62% to 88% RH
+                    temp = round(20.0 + norm_val * 12.0, 1)
+                    hum = round(62.0 + (1.0 - norm_val) * 26.0, 1)
                     return SensorReading(temp, hum, analog_a0=a0_val, digital_d0=d0_val, raw_line=raw_line)
             except Exception:
                 pass
 
-        # 3. Try CSV / Key-Value: "24.5,70.2" or "T=24.5,H=70.2" or "TEMP:24.5,HUM:70.2"
+        # 3. Try CSV / Key-Value: "24.5,70.2"
         try:
             cleaned = raw_line.replace("T=", "").replace("H=", "").replace("TEMP:", "").replace("HUM:", "").replace("C", "").replace("%", "")
             parts = [p.strip() for p in cleaned.split(",") if p.strip()]
@@ -264,6 +264,40 @@ class ESP32SensorManager:
             pass
 
         return None
+
+    def fetch_cloud_bridge_reading(self, topic: str = "freshroute_sv_gokul_esp32", timeout: float = 2.0) -> Tuple[Optional[SensorReading], str]:
+        """Fetches the latest reading published to the cloud topic by local ESP32 bridge or Wi-Fi"""
+        try:
+            url = f"https://ntfy.sh/{topic}/json?poll=1&since=10m"
+            req = urllib.request.Request(url, headers={"User-Agent": "Freshroute-Dashboard/2.5"})
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                content = response.read().decode("utf-8")
+                lines = [json.loads(l) for l in content.strip().split("\n") if l.strip()]
+                if not lines:
+                    return None, "No recent messages in cloud topic. Run 'run_cloud_bridge.bat' locally."
+
+                # The latest message is the last element
+                last_entry = lines[-1]
+                msg_raw = last_entry.get("message", "")
+                if msg_raw.startswith("{") and msg_raw.endswith("}"):
+                    data = json.loads(msg_raw)
+                else:
+                    data = last_entry
+
+                temp = float(data.get("temperature_C", data.get("temp", data.get("temperature", 25.0))))
+                hum = float(data.get("humidity_RH", data.get("hum", data.get("humidity", 70.0))))
+                a0 = float(data.get("analog_a0", data.get("a0", None))) if ("analog_a0" in data or "a0" in data) else None
+                d0 = int(data.get("digital_d0", data.get("d0", None))) if ("digital_d0" in data or "d0" in data) else None
+                ts = float(data.get("timestamp", data.get("ts", time.time())))
+
+                reading = SensorReading(temp_c=temp, humidity_rh=hum, timestamp=ts, analog_a0=a0, digital_d0=d0, raw_line=msg_raw or str(data))
+                with self._lock:
+                    self.last_reading = reading
+                    self.latest_raw_line = msg_raw or str(data)
+                    self.status_message = f"Cloud Live Stream: {temp}°C | {hum}% RH"
+                return reading, "Success"
+        except Exception as e:
+            return None, f"Cloud Fetch Error: {str(e)}"
 
     def read_serial_line(self) -> Optional[SensorReading]:
         """Returns the most recent reading received by the background reader"""
@@ -283,7 +317,8 @@ class ESP32SensorManager:
                 temp = float(data.get("temperature", data.get("temp", data.get("temperature_C", 25.0))))
                 hum = float(data.get("humidity", data.get("hum", data.get("humidity_RH", 70.0))))
                 reading = SensorReading(temp, hum, raw_line=content)
-                self.last_reading = reading
+                with self._lock:
+                    self.last_reading = reading
                 return reading, "Success"
         except Exception as e:
             return None, f"HTTP Fetch Error: {str(e)}"
@@ -310,7 +345,8 @@ class ESP32SensorManager:
             hum = min(98.0, max(30.0, self.sim_base_humidity + hum_wave))
 
         reading = SensorReading(temp_c=temp, humidity_rh=hum)
-        self.last_reading = reading
+        with self._lock:
+            self.last_reading = reading
         return reading
 
     def get_latest_reading(
@@ -322,7 +358,8 @@ class ESP32SensorManager:
         """Fetch latest reading based on active telemetry mode"""
         if manual_temp is not None and manual_hum is not None:
             reading = SensorReading(temp_c=manual_temp, humidity_rh=manual_hum)
-            self.last_reading = reading
+            with self._lock:
+                self.last_reading = reading
             return reading
 
         if self.active_mode == "SERIAL" and self.is_connected:
@@ -333,18 +370,3 @@ class ESP32SensorManager:
                 return self.last_reading
 
         return self.generate_simulated_reading()
-
-    def record_reading_for_shipment(self, shipment_id: str, reading: SensorReading):
-        """Appends reading to shipment time-series buffer"""
-        with self._lock:
-            if shipment_id not in self.shipment_history:
-                self.shipment_history[shipment_id] = []
-            self.shipment_history[shipment_id].append(reading)
-            if len(self.shipment_history[shipment_id]) > 120:
-                self.shipment_history[shipment_id] = self.shipment_history[shipment_id][-120:]
-
-    def get_shipment_history_dicts(self, shipment_id: str) -> List[Dict[str, Any]]:
-        """Returns list of dict readings for ML/physics engine processing"""
-        with self._lock:
-            history = self.shipment_history.get(shipment_id, [])
-            return [r.to_dict() for r in history]
