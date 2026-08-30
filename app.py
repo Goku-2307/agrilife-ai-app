@@ -121,6 +121,8 @@ def load_system_engines():
     return engine, detector, sensor_mgr, fefo
 
 engine, detector, sensor_mgr, fefo_engine = load_system_engines()
+if not hasattr(sensor_mgr, "auto_connect_if_available"):
+    sensor_mgr = ESP32SensorManager()
 
 
 # ==============================================================================
@@ -770,7 +772,9 @@ if st.session_state.current_page == "📡 ESP32 IoT Detection":
                         st.rerun()
                 with c_btn3:
                     if st.button("⚡ Auto-Connect", use_container_width=True, help="Scans and automatically connects to the detected ESP32 port."):
-                        ok = sensor_mgr.auto_connect_if_available()
+                        ok = False
+                        if hasattr(sensor_mgr, "auto_connect_if_available"):
+                            ok = sensor_mgr.auto_connect_if_available()
                         if ok:
                             st.toast(f"✅ Auto-connected to {sensor_mgr.serial_port}!", icon="⚡")
                         else:
@@ -781,7 +785,10 @@ if st.session_state.current_page == "📡 ESP32 IoT Detection":
                 with st.expander("🔍 Test / Probe Port Data Stream", expanded=False):
                     if st.button(f"Probe {selected_port} Stream (1.5s sample)", use_container_width=True):
                         with st.spinner(f"Probing {selected_port}..."):
-                            ok_p, p_msg, samples = sensor_mgr.probe_port(selected_port, baud, timeout=1.5)
+                            if hasattr(sensor_mgr, "probe_port"):
+                                ok_p, p_msg, samples = sensor_mgr.probe_port(selected_port, baud, timeout=1.5)
+                            else:
+                                ok_p, p_msg, samples = False, "Probe tool updating...", []
                             if ok_p:
                                 st.success(p_msg)
                                 for s in samples[:6]:
@@ -803,15 +810,14 @@ if st.session_state.current_page == "📡 ESP32 IoT Detection":
             else:
                 st.markdown("""
                 <div class="neon-callout-warn">
-                    <b>⚠️ No physical serial COM ports detected on this PC:</b><br>
-                    1. Ensure the USB cable is a <b>Data Cable</b> (not charge-only).<br>
-                    2. Unplug and re-plug the ESP32 into another USB port.<br>
-                    3. Ensure CP210x or CH340 USB drivers are installed.<br>
-                    4. Close any open serial monitors (e.g. Arduino IDE).
+                    <b>⚠️ No physical serial COM ports detected:</b><br>
+                    • If on Local PC: Check USB data cable and CP210x/CH340 drivers.<br>
+                    • If on Cloud: Switch to <b>Simulator</b> or <b>Wi-Fi HTTP Stream</b> above.
                 </div>
                 """, unsafe_allow_html=True)
                 if st.button("🔍 Scan for COM Ports", use_container_width=True):
-                    sensor_mgr.auto_connect_if_available()
+                    if hasattr(sensor_mgr, "auto_connect_if_available"):
+                        sensor_mgr.auto_connect_if_available()
                     st.rerun()
 
         elif conn_mode == "Wi-Fi HTTP / IP Stream":
