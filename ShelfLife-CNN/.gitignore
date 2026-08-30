@@ -1,0 +1,14 @@
+venv/
+__pycache__/
+*.pyc
+
+dataset/
+raw_dataset/
+
+*.log
+
+.DS_Store
+apple.jpg
+new_apple.jpg
+rotten_banana.jpg
+test.jpg
