@@ -112,17 +112,19 @@ if "ui_theme" not in st.session_state:
 # SYSTEM SINGLETON ENGINES
 # ==============================================================================
 @st.cache_resource
-def load_system_engines():
-    """Initializes shelf-life engine, vision detector, sensor manager, and routing engine"""
+def load_ml_engines():
+    """Initializes shelf-life engine, vision detector, and routing engine"""
     engine = ShelfLifeEngine(model_dir="models")
     detector = VisionQualityDetector()
-    sensor_mgr = ESP32SensorManager()
     fefo = FEFORoutingEngine()
-    return engine, detector, sensor_mgr, fefo
+    return engine, detector, fefo
 
-engine, detector, sensor_mgr, fefo_engine = load_system_engines()
-if not hasattr(sensor_mgr, "auto_connect_if_available"):
-    sensor_mgr = ESP32SensorManager()
+engine, detector, fefo_engine = load_ml_engines()
+
+if "sensor_mgr" not in st.session_state or not hasattr(st.session_state.sensor_mgr, "fetch_cloud_bridge_reading"):
+    st.session_state.sensor_mgr = ESP32SensorManager()
+
+sensor_mgr = st.session_state.sensor_mgr
 
 
 # ==============================================================================
